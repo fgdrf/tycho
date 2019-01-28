@@ -3,8 +3,16 @@ package org.eclipse.tycho.core.osgitools;
 import static org.osgi.framework.Constants.BUNDLE_CLASSPATH;
 import static org.osgi.framework.Constants.BUNDLE_VERSION;
 
+import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.URL;
+import java.nio.charset.Charset;
+import java.util.ArrayList;
+import java.util.List;
 
+import org.codehaus.plexus.classworlds.UrlUtils;
 import org.eclipse.osgi.framework.util.Headers;
 import org.eclipse.osgi.internal.resolver.StateObjectFactoryImpl;
 import org.eclipse.osgi.service.resolver.BundleDescription;
@@ -41,18 +49,59 @@ public class OsgiManifest {
     private OsgiManifest(InputStream stream, String location) throws OsgiManifestParserException {
         this.location = location;
         try {
+            List<String> content = getContent(location);
+
+            String lastLine = content.get(content.size() - 1);
+
+            if (!lastLine.matches("\\s+")) {
+                throw new OsgiManifestParserException(location, "Header must be terminated by a line break");
+            }
+
             this.headers = Headers.parseManifest(stream);
             // this will do more strict validation of headers on OSGi semantical level
             BundleDescription bundleDescription = StateObjectFactoryImpl.defaultFactory.createBundleDescription(null,
                     headers, location, 0L);
             this.bundleSymbolicName = bundleDescription.getSymbolicName();
-        } catch (BundleException e) {
+        } catch (Exception e) {
             throw new OsgiManifestParserException(location, e);
         }
         this.bundleVersion = parseBundleVersion();
         this.bundleClassPath = parseBundleClasspath();
         this.isDirectoryShape = parseDirectoryShape();
         this.executionEnvironments = parseExecutionEnvironments();
+    }
+
+    static List<String> getContent(String location) throws IOException {
+        List<String> result = new ArrayList<>();
+        URL locationURL = null;
+        File file = new File(location);
+
+        if (file.exists()) {
+            locationURL = new URL(file.toURL().toExternalForm());
+        } else if (location.contains(".jar!/")) {
+            //might be a jar with inner File
+            locationURL = new URL("jar:file:/" + location.replace("\\", "/"));
+        } else {
+            locationURL = new URL(UrlUtils.normalizeUrlPath(location));
+        }
+        try (InputStreamReader reader = new InputStreamReader(locationURL.openStream(), Charset.forName("UTF-8"))) {
+            StringBuffer sb = new StringBuffer();
+            while (reader.ready()) {
+                char c = (char) reader.read();
+                if (c == '\n') {
+                    result.add(sb.toString());
+                    sb = new StringBuffer();
+                } else {
+                    sb.append(c);
+                }
+            }
+            result.add(sb.toString() + "\n");
+
+        } catch (Exception e) {
+            throw new IOException("unable to read from location [" + location + "]", e);
+        }
+
+        return result;
     }
 
     private StandardExecutionEnvironment[] parseExecutionEnvironments() {
