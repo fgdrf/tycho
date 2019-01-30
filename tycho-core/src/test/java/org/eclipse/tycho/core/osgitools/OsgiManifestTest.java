@@ -130,6 +130,6 @@ public class OsgiManifestTest {
         String locationPath = "/manifests/" + manifestName;
         URL location = getClass().getResource(locationPath);
         InputStream stream = getClass().getResourceAsStream(locationPath);
-        return OsgiManifest.parse(stream, location.toExternalForm());
+        return OsgiManifest.parse(stream, location);
     }
 }
